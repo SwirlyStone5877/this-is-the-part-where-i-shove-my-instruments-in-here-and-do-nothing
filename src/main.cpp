@@ -90,6 +90,7 @@ String romOutName;
 String txtOutName;
 int benchMode=0;
 int subsong=-1;
+DivCSOptions csExportOptions;
 DivAudioExportOptions exportOptions;
 DivConfig romExportConfig;
 
@@ -324,6 +325,7 @@ TAParamResult pVersion(String) {
   printf("- SameBoy by Lior Halphon (MIT)\n");
   printf("- Mednafen PCE, WonderSwan and Virtual Boy by Mednafen Team (GPLv2)\n");
   printf("- Mednafen T6W28 by Blargg (GPLv2)\n");
+  printf("- WonderSwan new core by asiekierka (zlib license)\n");
   printf("- SNES DSP core by Blargg (LGPLv2.1)\n");
   printf("- puNES (modified version) by FHorse (GPLv2)\n");
   printf("- NSFPlay by Brad Smith and Brezza (unknown open-source license)\n");
@@ -707,7 +709,7 @@ int main(int argc, char** argv) {
         arg=arg.substr(0,eqSplit);
       }
       for (size_t j=0; j<params.size(); j++) {
-        if (params[j].name==arg || params[j].shortName==arg) {
+        if (params[j].name==arg || (params[j].shortName!="" && params[j].shortName==arg)) {
           switch (params[j].func(val)) {
             case TA_PARAM_ERROR:
               return 1;
@@ -880,7 +882,7 @@ int main(int argc, char** argv) {
 
   if (outputMode) {
     if (cmdOutName!="") {
-      SafeWriter* w=e.saveCommand();
+      SafeWriter* w=e.saveCommand(NULL);
       if (w!=NULL) {
         FILE* f=ps_fopen(cmdOutName.c_str(),"wb");
         if (f!=NULL) {

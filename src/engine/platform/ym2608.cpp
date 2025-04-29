@@ -686,6 +686,11 @@ void DivPlatformYM2608::acquire_lle(short** buf, size_t len) {
     for (int i=0; i<6; i++) {
       if (rssOut[i]<-32768) rssOut[i]=-32768;
       if (rssOut[i]>32767) rssOut[i]=32767;
+      if (isMuted[adpcmAChanOffs+i]) {
+        oscBuf[9+i]->putSample(h,0);
+      } else {
+        oscBuf[9+i]->putSample(h,rssOut[i]);
+      }
       oscBuf[9+i]->putSample(h,rssOut[i]);
     }
     // ADPCM
@@ -1790,9 +1795,6 @@ void DivPlatformYM2608::poke(std::vector<DivRegWrite>& wlist) {
 void DivPlatformYM2608::reset() {
   writes.clear();
   memset(regPool,0,512);
-  if (dumpWrites) {
-    addWrite(0xffffffff,0);
-  }
   OPN2_Reset(&fm_nuked);
   OPN2_SetChipType(&fm_nuked,ym3438_mode_opn);
   fm->reset();
@@ -1878,6 +1880,13 @@ void DivPlatformYM2608::reset() {
 
   extMode=false;
 
+  // enable 6 channel mode
+  immWrite(0x29,0x80);
+
+  if (dumpWrites) {
+    addWrite(0xffffffff,0);
+  }
+
   // LFO
   immWrite(0x22,lfoValue);
 
@@ -1888,9 +1897,6 @@ void DivPlatformYM2608::reset() {
   // ADPCM limit
   immWrite(0x10d,0xff);
   immWrite(0x10c,0xff);
-
-  // enable 6 channel mode
-  immWrite(0x29,0x80);
 
   // set prescaler
   immWrite(0x2d,0xff);

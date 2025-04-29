@@ -96,7 +96,7 @@ bool FurnaceGUI::drawSysConf(int chan, int sysPos, DivSystem type, DivConfig& fl
         }
       }
 
-      if (msw) {
+      if (msw || settings.mswEnabled) {
         if (ImGui::Checkbox(_("Modified sine wave (joke)"),&msw)) {
           altered=true;
         }
@@ -1905,6 +1905,7 @@ bool FurnaceGUI::drawSysConf(int chan, int sysPos, DivSystem type, DivConfig& fl
       break;
     }
     case DIV_SYSTEM_PCM_DAC: {
+      supportsCustomRate=false;
       // default to 44100Hz 16-bit stereo
       int sampRate=flags.getInt("rate",44100);
       int bitDepth=flags.getInt("outDepth",15)+1;
@@ -2551,7 +2552,7 @@ bool FurnaceGUI::drawSysConf(int chan, int sysPos, DivSystem type, DivConfig& fl
       break;
     }
     case DIV_SYSTEM_VERA: {
-      int chipType=flags.getInt("chipType",2);
+      int chipType=flags.getInt("chipType",3);
 
       ImGui::Text(_("Chip revision:"));
       ImGui::Indent();
@@ -2565,6 +2566,10 @@ bool FurnaceGUI::drawSysConf(int chan, int sysPos, DivSystem type, DivConfig& fl
       }
       if (ImGui::RadioButton(_("V 47.0.2 (Tri/Saw PW XOR)"),chipType==2)) {
         chipType=2;
+        altered=true;
+      }
+      if (ImGui::RadioButton(_("X16 Emu R49 (Noise freq fix)"),chipType==3)) {
+        chipType=3;
         altered=true;
       }
       ImGui::Unindent();
@@ -2602,30 +2607,37 @@ bool FurnaceGUI::drawSysConf(int chan, int sysPos, DivSystem type, DivConfig& fl
       if (ImGui::RadioButton(_("4MB"),ramSize==0)) {
         ramSize=0;
         altered=true;
+        mustRender=true;
       }
       if (ImGui::RadioButton(_("2MB"),ramSize==1)) {
         ramSize=1;
         altered=true;
+        mustRender=true;
       }
       if (ImGui::RadioButton(_("1MB"),ramSize==2)) {
         ramSize=2;
         altered=true;
+        mustRender=true;
       }
       if (ImGui::RadioButton(_("640KB"),ramSize==3)) {
         ramSize=3;
         altered=true;
+        mustRender=true;
       }
       if (ImGui::RadioButton(_("512KB"),ramSize==4)) {
         ramSize=4;
         altered=true;
+        mustRender=true;
       }
       if (ImGui::RadioButton(_("256KB"),ramSize==5)) {
         ramSize=5;
         altered=true;
+        mustRender=true;
       }
       if (ImGui::RadioButton(_("128KB"),ramSize==6)) {
         ramSize=6;
         altered=true;
+        mustRender=true;
       }
       ImGui::Unindent();
 
@@ -2656,7 +2668,19 @@ bool FurnaceGUI::drawSysConf(int chan, int sysPos, DivSystem type, DivConfig& fl
       }
       break;
     }
-    case DIV_SYSTEM_SWAN:
+    case DIV_SYSTEM_SWAN: {
+      bool stereo=flags.getBool("stereo",true);
+      if (ImGui::Checkbox(_("Headphone output##_SWAN_STEREO"),&stereo)) {
+        altered=true;
+      }
+
+      if (altered) {
+        e->lockSave([&]() {
+          flags.set("stereo",stereo);
+        });
+      }
+      break;
+    }
     case DIV_SYSTEM_BUBSYS_WSG:
     case DIV_SYSTEM_PET:
     case DIV_SYSTEM_GA20:
@@ -2665,7 +2689,6 @@ bool FurnaceGUI::drawSysConf(int chan, int sysPos, DivSystem type, DivConfig& fl
     case DIV_SYSTEM_BIFURCATOR:
     case DIV_SYSTEM_POWERNOISE:
     case DIV_SYSTEM_UPD1771C:
-    case DIV_SYSTEM_UPD1771C_TONE:
       break;
     case DIV_SYSTEM_YMU759:
     case DIV_SYSTEM_ESFM:

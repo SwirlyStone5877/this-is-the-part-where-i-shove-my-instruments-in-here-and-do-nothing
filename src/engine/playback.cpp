@@ -68,6 +68,10 @@ const char* cmdName[]={
   "HINT_PORTA",
   "HINT_LEGATO",
   "HINT_VOL_SLIDE_TARGET",
+  "HINT_TREMOLO",
+  "HINT_PANBRELLO",
+  "HINT_PAN_SLIDE",
+  "HINT_PANNING",
 
   "SAMPLE_MODE",
   "SAMPLE_FREQ",
@@ -303,7 +307,9 @@ const char* cmdName[]={
   "SID3_NOISE_PHASE_RESET",
   "SID3_ENVELOPE_RESET",
   "SID3_CUTOFF_SCALING",
-  "SID3_RESONANCE_SCALING"
+  "SID3_RESONANCE_SCALING",
+
+  "WS_GLOBAL_SPEAKER_VOLUME"
 };
 
 static_assert((sizeof(cmdName)/sizeof(void*))==DIV_CMD_MAX,"update cmdName!");
@@ -367,7 +373,9 @@ int DivEngine::dispatchCmd(DivCommand c) {
               if (chan[c.chan].curMidiNote<0) chan[c.chan].curMidiNote=0;
               if (chan[c.chan].curMidiNote>127) chan[c.chan].curMidiNote=127;
             }
-            output->midiOut->send(TAMidiMessage(0x90|(c.chan&15),chan[c.chan].curMidiNote,scaledVol));
+            if (chan[c.chan].curMidiNote>=0) {
+              output->midiOut->send(TAMidiMessage(0x90|(c.chan&15),chan[c.chan].curMidiNote,scaledVol));
+            }
             break;
           case DIV_CMD_NOTE_OFF:
           case DIV_CMD_NOTE_OFF_ENV:
@@ -378,7 +386,7 @@ int DivEngine::dispatchCmd(DivCommand c) {
             break;
           case DIV_CMD_INSTRUMENT:
             if (chan[c.chan].lastIns!=c.value && midiOutProgramChange) {
-              output->midiOut->send(TAMidiMessage(0xc0|(c.chan&15),c.value,0));
+              output->midiOut->send(TAMidiMessage(0xc0|(c.chan&15),c.value&0x7f,0));
             }
             break;
           case DIV_CMD_VOLUME:
@@ -399,6 +407,8 @@ int DivEngine::dispatchCmd(DivCommand c) {
           }
           case DIV_CMD_PANNING: {
             int pan=convertPanSplitToLinearLR(c.value,c.value2,127);
+            if (pan<0) pan=0;
+            if (pan>127) pan=127;
             output->midiOut->send(TAMidiMessage(0xb0|(c.chan&15),0x0a,pan));
             break;
           }
@@ -758,6 +768,7 @@ void DivEngine::processRow(int i, bool afterDelay) {
         } else {
           chan[i].panSpeed=0;
         }
+        dispatchCmd(DivCommand(DIV_CMD_HINT_PAN_SLIDE,i,chan[i].panSpeed&0xff));
         break;
       case 0x84: // panbrello
         if (chan[i].panDepth==0) {
@@ -768,6 +779,7 @@ void DivEngine::processRow(int i, bool afterDelay) {
         if (chan[i].panDepth!=0) {
           chan[i].panSpeed=0;
         }
+        dispatchCmd(DivCommand(DIV_CMD_HINT_PANBRELLO,i,effectVal));
         break;
       case 0x88: // panning rear (split 4-bit)
         chan[i].panRL=(effectVal>>4)|(effectVal&0xf0);
@@ -858,7 +870,7 @@ void DivEngine::processRow(int i, bool afterDelay) {
         if (effectVal) chan[i].lastVibrato=effectVal;
         chan[i].vibratoDepth=effectVal&15;
         chan[i].vibratoRate=effectVal>>4;
-        dispatchCmd(DivCommand(DIV_CMD_HINT_VIBRATO,i,chan[i].vibratoDepth,chan[i].vibratoRate));
+        dispatchCmd(DivCommand(DIV_CMD_HINT_VIBRATO,i,(chan[i].vibratoDepth&15)|(chan[i].vibratoRate<<4)));
         dispatchCmd(DivCommand(DIV_CMD_PITCH,i,chan[i].pitch+(((chan[i].vibratoDepth*vibTable[chan[i].vibratoPos]*chan[i].vibratoFine)>>4)/15)));
         break;
       case 0x05: // vol slide + vibrato
@@ -869,7 +881,7 @@ void DivEngine::processRow(int i, bool afterDelay) {
           chan[i].vibratoDepth=chan[i].lastVibrato&15;
           chan[i].vibratoRate=chan[i].lastVibrato>>4;
         }
-        dispatchCmd(DivCommand(DIV_CMD_HINT_VIBRATO,i,chan[i].vibratoDepth,chan[i].vibratoRate));
+        dispatchCmd(DivCommand(DIV_CMD_HINT_VIBRATO,i,(chan[i].vibratoDepth&15)|(chan[i].vibratoRate<<4)));
         dispatchCmd(DivCommand(DIV_CMD_PITCH,i,chan[i].pitch+(((chan[i].vibratoDepth*vibTable[chan[i].vibratoPos]*chan[i].vibratoFine)>>4)/15)));
         // TODO: non-0x-or-x0 value should be treated as 00
         if (effectVal!=0) {
@@ -935,6 +947,7 @@ void DivEngine::processRow(int i, bool afterDelay) {
         }
         chan[i].tremoloDepth=effectVal&15;
         chan[i].tremoloRate=effectVal>>4;
+        dispatchCmd(DivCommand(DIV_CMD_HINT_TREMOLO,i,effectVal));
         if (chan[i].tremoloDepth!=0) {
           chan[i].volSpeed=0;
           chan[i].volSpeedTarget=-1;
@@ -1223,6 +1236,7 @@ void DivEngine::processRow(int i, bool afterDelay) {
 
   if (panChanged) {
     dispatchCmd(DivCommand(DIV_CMD_PANNING,i,chan[i].panL,chan[i].panR));
+    dispatchCmd(DivCommand(DIV_CMD_HINT_PANNING,i,chan[i].panL,chan[i].panR));
   }
   if (surroundPanChanged) {
     dispatchCmd(DivCommand(DIV_CMD_SURROUND_PANNING,i,2,chan[i].panRL));
@@ -1434,6 +1448,7 @@ void DivEngine::nextRow() {
     memset(walked,0,8192);
   }
 
+  prevSpeed=nextSpeed;
   if (song.brokenSpeedSel) {
     unsigned char speed2=(speeds.len>=2)?speeds.val[1]:speeds.val[0];
     unsigned char speed1=speeds.val[0];
@@ -2052,6 +2067,7 @@ void DivEngine::runMidiClock(int totalCycles) {
     double bpm=((24.0*divider)/(timeBase*hl*speedSum))*(double)virtualTempoN/vD;
     if (bpm<1.0) bpm=1.0;
     int increment=got.rate/(bpm);
+    if (increment<1) increment=1;
 
     midiClockCycles+=increment;
     midiClockDrift+=fmod(got.rate,(double)(bpm));
@@ -2064,6 +2080,7 @@ void DivEngine::runMidiClock(int totalCycles) {
 
 void DivEngine::runMidiTime(int totalCycles) {
   if (freelance) return;
+  if (got.rate<1) return;
   midiTimeCycles-=totalCycles;
   while (midiTimeCycles<=0) {
     if (curMidiTimePiece==0) {

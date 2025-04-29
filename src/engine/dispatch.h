@@ -71,6 +71,10 @@ enum DivDispatchCmds {
   DIV_CMD_HINT_PORTA, // (target, speed)
   DIV_CMD_HINT_LEGATO, // (note)
   DIV_CMD_HINT_VOL_SLIDE_TARGET, // (amount, target)
+  DIV_CMD_HINT_TREMOLO, // (speed/depth as a byte)
+  DIV_CMD_HINT_PANBRELLO, // (speed/depth as a byte)
+  DIV_CMD_HINT_PAN_SLIDE, // (speed)
+  DIV_CMD_HINT_PANNING, // (left, right)
 
   DIV_CMD_SAMPLE_MODE, // (enabled)
   DIV_CMD_SAMPLE_FREQ, // (frequency)
@@ -171,8 +175,8 @@ enum DivDispatchCmds {
   DIV_CMD_X1_010_AUTO_ENVELOPE,
   DIV_CMD_X1_010_SAMPLE_BANK_SLOT,
 
-  DIV_CMD_WS_SWEEP_TIME,
-  DIV_CMD_WS_SWEEP_AMOUNT,
+  DIV_CMD_WS_SWEEP_TIME, // (time)
+  DIV_CMD_WS_SWEEP_AMOUNT, // (value)
 
   DIV_CMD_N163_WAVE_POSITION,
   DIV_CMD_N163_WAVE_LENGTH,
@@ -309,6 +313,8 @@ enum DivDispatchCmds {
   DIV_CMD_SID3_CUTOFF_SCALING,
   DIV_CMD_SID3_RESONANCE_SCALING,
 
+  DIV_CMD_WS_GLOBAL_SPEAKER_VOLUME, // (multiplier)
+
   DIV_CMD_MAX
 };
 
@@ -437,7 +443,7 @@ struct DivDispatchOscBuffer {
   unsigned int needle;
   unsigned short readNeedle;
   //unsigned short lastSample;
-  bool follow;
+  bool follow, mustNotKillNeedle;
   short data[65536];
 
   inline void putSample(const size_t pos, const short val) {
@@ -464,6 +470,11 @@ struct DivDispatchOscBuffer {
     unsigned short start=needle>>16;
     unsigned short end=(needle+calc)>>16;
 
+    if (mustNotKillNeedle && start!=end) {
+      start++;
+      end++;
+    }
+
     //logD("C %d %d %d",len,calc,rate);
 
     if (end<start) {
@@ -479,12 +490,14 @@ struct DivDispatchOscBuffer {
   inline void end(size_t len) {
     size_t calc=len*rateMul;
     needle+=calc;
+    mustNotKillNeedle=needle&0xffff;//(data[needle>>16]!=-1);
     //data[needle>>16]=lastSample;
   }
   void reset() {
     memset(data,-1,65536*sizeof(short));
     needle=0;
     readNeedle=0;
+    mustNotKillNeedle=false;
     //lastSample=0;
   }
   void setRate(unsigned int r) {
@@ -499,7 +512,8 @@ struct DivDispatchOscBuffer {
     needle(0),
     readNeedle(0),
     //lastSample(0),
-    follow(true) {
+    follow(true),
+    mustNotKillNeedle(false) {
     memset(data,-1,65536*sizeof(short));
   }
 };
